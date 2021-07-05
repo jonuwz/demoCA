@@ -1,0 +1,59 @@
+#!/bin/bash
+
+while test $# -gt 0
+do
+    case $1 in
+    '-cn')
+      shift;cn="$1";shift;;
+    '-san')
+      shift;san="$san $1 ";shift;;
+    '-ip')
+      shift;ip="$ip $1 ";shift;;
+    *)
+      printf "Usage:\n\t$(basename $0) -cn url [ -san altname ... ]\n";exit 0;;
+    esac
+done
+
+if ! [[ "$san" =~ " $cn " ]];then
+  san="$san $cn"
+fi
+
+san="$(echo "$san" | sed 's/ /\n/g' | sort | uniq | grep . | sed 's/^/DNS:/' )"
+ip="$(echo "$ip" | sed 's/ /\n/g' | sort | uniq | grep . | sed 's/^/IP:/' )"
+alts=($san $ip)
+alts="$(IFS=, ; echo "${alts[*]}")"
+
+export pki_ca_type="intermediate"
+export pki_dir="$(pwd)/${pki_ca_type}"
+export pki_policy=loose
+
+private_key="intermediate/private/$cn.key.pem"
+csr="intermediate/csr/$cn.csr.pem"
+
+if [[ ! -f "$private_key" ]];then
+  openssl genrsa  -out "$private_key" 2048
+fi
+
+openssl req -key "$private_key" -new -sha256 -out "$csr" \
+  -subj "/C=GB/O=Security/OU=Research/CN=$cn" \
+  -reqexts SAN \
+  -config <( cat ./openssl.cnf; printf "[SAN]\nsubjectAltName=$alts" )
+
+openssl ca -config ./openssl.cnf -batch \
+      -extensions server_cert -days 375 -notext -md sha256 \
+      -in "$csr" \
+      -out intermediate/certs/$cn.cert.pem
+
+mkdir -p "bundles/$cn"
+cat "intermediate/private/$cn.key.pem" "intermediate/certs/$cn.cert.pem" "intermediate/certs/intermediate.cert.pem" > "bundles/$cn/all-in-one.pem"
+cat "intermediate/certs/$cn.cert.pem" "intermediate/certs/intermediate.cert.pem" > "bundles/$cn/chain.pem"
+cp "intermediate/private/$cn.key.pem" "bundles/$cn/key.pem"
+cp "intermediate/certs/$cn.cert.pem" "bundles/$cn/cert.pem"
+cp "intermediate/certs/intermediate.cert.pem" "bundles/$cn/intermediate.pem"
+
+printf "\nThe following resources have been created : \n\n"
+printf "%-64s : %s\n" "privatekey" "bundles/$cn/key.pem"
+printf "%-64s : %s\n" "certificate" "bundles/$cn/cert.pem"
+printf "%-64s : %s\n" "certificate + intermediate" "bundles/$cn/chain.pem"
+printf "%-64s : %s\n" "privatekey + certificate + intermediate" "bundles/$cn/all-in-one.pem"
+printf "%-64s : %s\n" "intermediate" "bundles/$cn/intermediate.pem"

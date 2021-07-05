@@ -1,0 +1,15 @@
+#!/bin/bash
+export pki_ca_type="ca"
+export pki_dir="$(pwd)/${pki_ca_type}"
+export pki_policy=strict
+
+mkdir -p ${pki_dir}/{certs,crl,newcerts,private}
+chmod 700 ${pki_dir}/private
+touch ${pki_dir}/index.txt
+echo "unique_subject = no" > ${pki_dir}/index.txt.attr
+echo 1000 > ${pki_dir}/serial
+
+openssl req -config ./openssl.cnf -x509 -sha512 -nodes -extensions v3_ca -newkey rsa:4096 -days 7320 \
+  -keyout ${pki_dir}/private/${pki_ca_type}.key.pem \
+  -out ${pki_dir}/certs/${pki_ca_type}.cert.pem \
+  -subj "/C=GB/O=Security/OU=Research/CN=demoCA"
